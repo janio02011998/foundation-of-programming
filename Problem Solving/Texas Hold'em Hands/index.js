@@ -1,236 +1,75 @@
-function clearSymbols(arrCards) {
-  return arrCards.map(item => item.replace(/[^\w\s]/gi, ''));
+const RANKS    = '2 3 4 5 6 7 8 9 10 J Q K A'.split(' ').reverse();
+const COLORS   = [...'♠♦♣♥'];
+const CARD2IDX = RANKS.reduce( (o,c,i)=>(o[c]=i,o), {});
+
+const highestCardFirst             = (c,d) => CARD2IDX[c]-CARD2IDX[d];
+const mostFrequentThenHighestFirst = (a,b) => b[1]-a[1] || CARD2IDX[a[0]]-CARD2IDX[b[0]];
+
+const findStraight=cards=>{
+    let cntS=1;
+    for(let i=1;i<cards.length;i++){
+        cntS = 1 === CARD2IDX[cards[i]] - CARD2IDX[cards[i-1]] ? cntS+1:1;
+        if(cntS===5) return cards.slice(i-4,i+1);
+    }
+    return false;
+}
+const orderHandCards=(main,cnts)=>{
+    let nothings = cnts.orderedCardsSet.filter(c=>!main.includes(c));
+    return main.concat(nothings);
+}
+const counter=cards=>{
+    let cnts = COLORS.reduce((o,k)=> (o[k]={cards:[], straight:0}, o), {});
+    cnts.all = {cards:{}, byCounts:{}, straight:0};
+    cnts.orderedCardsSet = [];
+    
+    cards.forEach( c => { let color=c.slice(-1), value=c.slice(0,-1);
+                          cnts[color].cards.push(value);
+                          cnts.all.cards[value] = cnts.all.cards[value]+1||1;
+                        });
+    
+    cnts.orderedCardsSet = [...Object.keys(cnts.all.cards)].sort(highestCardFirst);
+    cnts.all.straight    = findStraight(cnts.orderedCardsSet);
+    COLORS.forEach(col=> cnts[col].straight = findStraight(cnts[col].cards.sort(highestCardFirst)) );
+    
+    let sortedEntries = [...Object.entries(cnts.all.cards)].sort(mostFrequentThenHighestFirst);
+    for(let [c,n] of sortedEntries){
+        ( cnts.all.byCounts[n] = cnts.all.byCounts[n]||[] ).push(c);
+    }
+    return cnts;
 }
 
-function applyCardOrder(arrCards, rankSystem, cardsWithSuits, symbols){
-  const cardsSorted = arrCards.sort((a, b) => {
-    let positionA = rankSystem.indexOf(a);
-    let positionB = rankSystem.indexOf(b);
-    
-    return positionA - positionB;
-  });
+const RANKINGS = [
+    ['straight-flush', cnts => { return COLORS.map(col=>cnts[col].straight).find(v=>v) }],
+                            
+    ['four-of-a-kind', cnts => { let four = cnts.all.byCounts[4]
+                                 return four && orderHandCards(four,cnts).slice(0,2); }],
+                                             
+    ['full house',     cnts => { let three = cnts.all.byCounts[3];
+                                 let full  = (three||[]).concat(cnts.all.byCounts[2]||[]).slice(0,2);
+                                 return three && full.length==2 && full; }],
+                            
+    ['flush',          cnts => { let flush = COLORS.map(col=>cnts[col].cards).find(a=>a.length>=5);
+                                 return flush && flush.slice(0,5); }],
+                            
+    ['straight',       cnts => { return cnts.all.straight }],
+                            
+    ['three-of-a-kind',cnts => { let three = cnts.all.byCounts[3];
+                                 return three && orderHandCards(three,cnts).slice(0,3); }],
+                            
+    ['two pair',       cnts => { let pair = cnts.all.byCounts[2];
+                                 return pair && pair.length>1 && orderHandCards(pair.slice(0,2),cnts).slice(0,3); }],
+                            
+    ['pair',           cnts => { let pair = cnts.all.byCounts[2];
+                                 return pair && orderHandCards(pair,cnts).slice(0,4); }],
+                            
+    ['nothing',        cnts => { return cnts.orderedCardsSet.slice(0,5) }],
+];
 
-  if (Array.from(new Set(symbols)).length <= 3) {
-    let cardsSuit = {};
-    
-    for (i = 0; i < symbols.length; i++) {
-      cardsSuit[symbols[i]] = [];
 
-      for (j = 0; j < cardsSorted.length; j++) {
-        if (cardsWithSuits.includes(`${cardsSorted[j]}${symbols[i]}`)) {
-            cardsSuit[symbols[i]].push(cardsSorted[j]);
-        }
-      }
-    }
-    
-   let isFlushRank = {
-      valid: false,
-      rankFlusk: []
-   };
-    
-    Object.keys(cardsSuit).map(key => {
-      if (cardsSuit[key].length === 5) {
-        isFlushRank.valid = true;
-        isFlushRank.rankFlusk = cardsSuit[key];
-      }
-    })
-    
-    if (isFlushRank.valid) {
-      return isFlushRank.rankFlusk
-    }
+function hand(holeCards, comCards) {
+  let cnts = counter(holeCards.concat(comCards));
+  for(let [name,rule] of RANKINGS){
+      let out = rule(cnts);
+      if(out && out.length) return {type:name, ranks: out};
   }
-  
-  let isHigherToLow;
-  let test = []
-  for (i = 0; i < cardsSorted.length - 1; i++) {
-    console.log(rankSystem.indexOf(cardsSorted[i]), rankSystem.indexOf(cardsSorted[i+1]) - 1)
-     if(rankSystem.indexOf(cardsSorted[i]) === rankSystem.indexOf(cardsSorted[i+1]) - 1) {
-       isHigherToLow = true;
-       test.push(cardsSorted[i]);
-       if (test.length === 5) break;
-     } else {
-           console.log("no")
-
-       isHigherToLow = false;
-       break;
-     }
-  }
-  if (isHigherToLow) {
-  }
-  console.log("No", cardsSorted)
-  return cardsSorted;
 }
-
-function applyOrderToDuplicateCases(sortedCards) {
- let cardsOrder = [];
-  
-  sortedCards.forEach(sortedCard => {
-    if (cardsOrder.some((item) => item.number === sortedCard)) {
-     const index = cardsOrder.findIndex(c => c.number === sortedCard);
-     const total = cardsOrder.find(c => c.number === sortedCard).order + 1;
-      
-     cardsOrder.splice(index, 1) 
-     cardsOrder.push({
-       number: sortedCard, order: total
-     })
-
-    } else {
-      cardsOrder.push({number: sortedCard, order: 1})
-    }
-  })
-    
-  const cardsSortedByOrder = cardsOrder.sort((a, b) => b.order - a.order);
-  
-  let totalRank = 0;
-  let cardsSortedByOrderNumbers = [];
-
-  let i = 0;
-  while ( totalRank < 5) {
-    cardsSortedByOrderNumbers.push(cardsSortedByOrder[i].number);
-    totalRank = totalRank + cardsSortedByOrder[i].order;
-    i++;
-  } 
-  
-  return { cardsSortedByOrder: cardsSortedByOrderNumbers.slice(0,5), cardsOrder: cardsOrder.sort((a, b) => b.order - a.order)};
-}
-
-
-function hand(holeCards, communityCards) {
-  const rankSystem = ['A', 'K', 'Q', 'J', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1'];
-  
-  const symbols = holeCards.concat(communityCards).map(c => c.slice(-1));
-  
-  const communitCardsWithoutSymbols = clearSymbols(communityCards);
-  
-  const holeCardsWithoutSymbols = clearSymbols(holeCards);
-    
-  const rankGroup = communitCardsWithoutSymbols.concat(holeCardsWithoutSymbols);
-  
-  const { cardsSortedByOrder, cardsOrder } = 
-        applyOrderToDuplicateCases(applyCardOrder(rankGroup, rankSystem, communityCards.concat(holeCards), symbols));
-  
-  const ranks = Array.from(new Set(cardsSortedByOrder));
-  
-  const types = {
-    'nothing': {
-      rule: {
-        rankTotal: 5,
-        holeCardMaximumRecord: 1,
-        sortValidate: () => true,
-        sameSuit: () => true
-      }
-    },
-    'pair': {
-      rule: {
-        rankTotal: 4,
-        holeCardMaximumRecord: 2,
-        sortValidate: () => true,
-        sameSuit: () => true
-      }
-    },
-    'two pair': {
-      rule: {
-        rankTotal: 3,
-        holeCardMaximumRecord: 2,
-        sortValidate: () => true,
-        sameSuit: () => true
-      }
-    },
-    'three-of-a-kind': {
-      rule: {
-        rankTotal: 3,
-        holeCardMaximumRecord: 3,
-        sortValidate: () => true,
-        sameSuit: () => true
-      }
-    },
-    'straight': {
-      rule: {
-        rankTotal: 5,
-        holeCardMaximumRecord: 1,
-        sortValidate:() => {
-          let isHigherToLow;
-          for (i = 0; i < ranks.length - 1; i++) {
-             if(rankSystem.indexOf(ranks[i]) === rankSystem.indexOf(ranks[i+1]) - 1) {
-               isHigherToLow = true;
-             } else {
-               isHigherToLow = false;
-               break;
-             }
-          }
-          
-          return isHigherToLow;
-        },
-        sameSuit: () => true
-      }
-    },
-    'flush': {
-      rule: {
-        rankTotal: 5,
-        holeCardMaximumRecord: 1,
-        sortValidate: () => true,
-        sameSuit: () => {
-          return Array.from(new Set(symbols)).length <= 3;
-        }
-      }
-    },
-    'full house': {
-      rule: {
-        rankTotal: 2,
-        holeCardMaximumRecord: 3,
-        sortValidate: () => true,
-        sameSuit: () => true
-      }
-    },
-    'four-of-a-kind': {
-      rule: {
-        rankTotal: 2,
-        holeCardMaximumRecord: 4,
-        sortValidate: () => true,
-        sameSuit: () => true
-      }
-    },
-    'straight-flush': {
-      rule: {
-        rankTotal: 5,
-        holeCardMaximumRecord: 1,
-        sortValidate: () => {
-          let isHigherToLow;
-          for (i = 0; i < ranks.length - 1; i++) {
-             if(rankSystem.indexOf(ranks[i]) === rankSystem.indexOf(ranks[i+1]) - 1) {
-               isHigherToLow = true;
-             } else {
-               isHigherToLow = false;
-               break;
-             }
-          }
-          
-          return isHigherToLow;
-        },
-        sameSuit: () => {
-          return Array.from(new Set(symbols)).length <= 3;
-        }
-      }
-    },
-  }
-  
-  let currentTypeRank; 
-  
-  Object.keys(types).forEach((key) => {
-    const maximumOcurrenceCard = cardsOrder.sort((a, b) => b.order - a.order)[0].order;
-    const isSortedRule = types[key].rule.sortValidate();
-    const isSameSuit = types[key].rule.sameSuit();
-    
-    if (
-      types[key].rule.rankTotal === ranks.length && 
-      types[key].rule.holeCardMaximumRecord === maximumOcurrenceCard &&
-      isSortedRule &&
-      isSameSuit 
-    ) {
-      currentTypeRank = key;
-    }
-  })
-  
-  return {type: currentTypeRank, ranks};
-}
-
